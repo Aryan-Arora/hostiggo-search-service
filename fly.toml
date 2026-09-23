@@ -1,0 +1,27 @@
+# Deploy-ready config for Fly.io. Not deployed by this scaffold — run
+# `fly launch --no-deploy` to adopt this file, set secrets, then `fly deploy`.
+app = "hostiggo-search-service"
+primary_region = "syd" # ap-southeast-2-adjacent; match the Supabase project's region
+
+[build]
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = true
+  auto_start_machines = true
+  min_machines_running = 0
+
+[[http_service.checks]]
+  interval = "15s"
+  timeout = "5s"
+  grace_period = "5s"
+  method = "GET"
+  path = "/healthz"
+
+[env]
+  DB_SCHEMA = "hostiggo_testing_schema"
+  PORT = "8080"
+
+# Secrets (set via `fly secrets set DATABASE_URL=...`), not committed here:
+#   DATABASE_URL
