@@ -1,0 +1,289 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>hostiggo-search-service — test console</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root {
+    --bg: #0f1115; --panel: #171a21; --border: #262b36; --text: #e6e8ec;
+    --muted: #8b909c; --accent: #4f8cff; --accent-dim: #2b4a8a;
+    --ok: #3ecf8e; --err: #ff6b6b; --mono: ui-monospace, "SF Mono", Menlo, monospace;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 14px/1.5 -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  header {
+    padding: 16px 24px; border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  header h1 { font-size: 15px; margin: 0; font-weight: 600; }
+  header h1 span { color: var(--muted); font-weight: 400; }
+  #status { font-size: 12px; color: var(--muted); display: flex; align-items: center; gap: 6px; }
+  #status .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+  #status.ok .dot { background: var(--ok); }
+  #status.err .dot { background: var(--err); }
+
+  main { display: grid; grid-template-columns: 340px 1fr; gap: 0; min-height: calc(100vh - 53px); }
+  .panel { padding: 20px; border-right: 1px solid var(--border); overflow-y: auto; }
+  .results { padding: 20px; overflow-y: auto; }
+
+  fieldset { border: 1px solid var(--border); border-radius: 8px; margin: 0 0 16px; padding: 12px; }
+  legend { padding: 0 6px; color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .04em; }
+  label { display: block; font-size: 12px; color: var(--muted); margin: 8px 0 4px; }
+  label:first-child { margin-top: 0; }
+  input, select {
+    width: 100%; padding: 7px 9px; background: var(--panel); border: 1px solid var(--border);
+    border-radius: 6px; color: var(--text); font: inherit;
+  }
+  input:focus, select:focus { outline: none; border-color: var(--accent); }
+  .row { display: flex; gap: 8px; }
+  .row > * { flex: 1; }
+  button {
+    width: 100%; padding: 9px; margin-top: 12px; background: var(--accent); color: #fff;
+    border: none; border-radius: 6px; font: inherit; font-weight: 600; cursor: pointer;
+  }
+  button:hover { background: #3f7cf0; }
+  button.secondary { background: var(--panel); border: 1px solid var(--border); color: var(--text); }
+  button.secondary:hover { border-color: var(--accent); }
+  button:disabled { opacity: .5; cursor: default; }
+
+  .meta { display: flex; gap: 16px; font-size: 12px; color: var(--muted); margin-bottom: 14px; flex-wrap: wrap; }
+  .meta b { color: var(--text); }
+
+  .card {
+    border: 1px solid var(--border); border-radius: 8px; padding: 14px; margin-bottom: 10px;
+    display: grid; grid-template-columns: 96px 1fr; gap: 12px;
+  }
+  .card img { width: 96px; height: 72px; object-fit: cover; border-radius: 6px; background: #22262f; }
+  .card .noimg { width: 96px; height: 72px; border-radius: 6px; background: #22262f; display:flex; align-items:center; justify-content:center; color: var(--muted); font-size: 10px; }
+  .card h3 { margin: 0 0 4px; font-size: 14px; }
+  .card p.desc { margin: 0 0 8px; color: var(--muted); font-size: 12px; max-height: 2.6em; overflow: hidden; }
+  .tags { display: flex; gap: 6px; flex-wrap: wrap; font-size: 11px; color: var(--muted); }
+  .tags span { border: 1px solid var(--border); border-radius: 4px; padding: 1px 6px; }
+  .price { font-weight: 600; color: var(--accent); }
+
+  details { border: 1px solid var(--border); border-radius: 8px; margin-top: 16px; }
+  summary { cursor: pointer; padding: 8px 12px; font-size: 12px; color: var(--muted); }
+  pre { margin: 0; padding: 12px; font: 11px/1.5 var(--mono); color: var(--muted); overflow-x: auto; white-space: pre-wrap; }
+
+  #autocomplete-results { list-style: none; margin: 4px 0 0; padding: 0; border: 1px solid var(--border); border-radius: 6px; max-height: 160px; overflow-y: auto; }
+  #autocomplete-results li { padding: 6px 9px; cursor: pointer; font-size: 12px; }
+  #autocomplete-results li:hover { background: var(--panel); }
+  .empty { color: var(--muted); text-align: center; padding: 40px 0; }
+  .errbox { border: 1px solid var(--err); color: var(--err); border-radius: 6px; padding: 10px 12px; font-size: 12px; margin-bottom: 14px; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>hostiggo-search-service <span>test console</span></h1>
+  <div id="status"><span class="dot"></span><span id="status-text">checking /healthz…</span></div>
+</header>
+
+<main>
+  <div class="panel">
+    <fieldset>
+      <legend>Free text</legend>
+      <label for="q">q</label>
+      <input id="q" placeholder="e.g. apartment, beach house…">
+    </fieldset>
+
+    <fieldset>
+      <legend>Location</legend>
+      <label for="district">district</label>
+      <input id="district" placeholder="e.g. Mumbai">
+      <label for="state">state (used if district empty)</label>
+      <input id="state" placeholder="e.g. Maharashtra">
+      <label for="loc-autocomplete">location autocomplete (GET /api/locations)</label>
+      <input id="loc-autocomplete" placeholder="type to search…">
+      <ul id="autocomplete-results"></ul>
+    </fieldset>
+
+    <fieldset>
+      <legend>Filters</legend>
+      <div class="row">
+        <div><label for="minPrice">min price</label><input id="minPrice" type="number"></div>
+        <div><label for="maxPrice">max price</label><input id="maxPrice" type="number"></div>
+      </div>
+      <label for="totalGuests">total guests</label>
+      <input id="totalGuests" type="number">
+      <div class="row">
+        <div><label for="startDate">start date</label><input id="startDate" type="date"></div>
+        <div><label for="endDate">end date</label><input id="endDate" type="date"></div>
+      </div>
+      <label for="amenities">amenity ids (comma-separated)</label>
+      <input id="amenities" placeholder="1,2,3">
+      <label for="ratings">ratings (comma-separated)</label>
+      <input id="ratings" placeholder="4,5">
+      <div class="row">
+        <div><label for="latitude">latitude</label><input id="latitude" type="number" step="any"></div>
+        <div><label for="longitude">longitude</label><input id="longitude" type="number" step="any"></div>
+      </div>
+      <label for="pageSize">page size</label>
+      <input id="pageSize" type="number" value="20">
+    </fieldset>
+
+    <button id="search-btn">Search</button>
+    <button id="reset-btn" class="secondary">Reset cursor &amp; search</button>
+  </div>
+
+  <div class="results">
+    <div id="err-box"></div>
+    <div class="meta" id="meta"></div>
+    <div id="cards"></div>
+    <button id="loadmore-btn" class="secondary" style="display:none">Load more</button>
+    <details>
+      <summary>Raw response JSON</summary>
+      <pre id="raw"></pre>
+    </details>
+  </div>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+let cursor = null;
+
+async function checkHealth() {
+  const el = $('status'), txt = $('status-text');
+  try {
+    const res = await fetch('/healthz');
+    if (res.ok) { el.className = 'ok'; txt.textContent = 'service up'; }
+    else throw new Error('unhealthy');
+  } catch {
+    el.className = 'err'; txt.textContent = 'service unreachable';
+  }
+}
+
+function num(id) { const v = $(id).value.trim(); return v === '' ? undefined : Number(v); }
+function str(id) { const v = $(id).value.trim(); return v === '' ? undefined : v; }
+function list(id) {
+  const v = $(id).value.trim();
+  if (v === '') return undefined;
+  return v.split(',').map(s => s.trim()).filter(Boolean).map(Number);
+}
+
+function buildFilters() {
+  const f = {
+    q: str('q'),
+    district: str('district'),
+    state: str('state'),
+    minPrice: num('minPrice'),
+    maxPrice: num('maxPrice'),
+    totalGuests: num('totalGuests'),
+    startDate: str('startDate'),
+    endDate: str('endDate'),
+    amenities: list('amenities'),
+    ratings: list('ratings'),
+    latitude: num('latitude'),
+    longitude: num('longitude'),
+  };
+  Object.keys(f).forEach(k => f[k] === undefined && delete f[k]);
+  return Object.keys(f).length ? f : undefined;
+}
+
+async function runSearch(append) {
+  $('err-box').innerHTML = '';
+  const body = {
+    filters: buildFilters(),
+    cursor: append ? cursor : null,
+    pageSize: num('pageSize') ?? 20,
+  };
+
+  const t0 = performance.now();
+  let res, data;
+  try {
+    res = await fetch('/api/search', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    data = await res.json();
+  } catch (e) {
+    $('err-box').innerHTML = `<div class="errbox">Request failed: ${e.message}</div>`;
+    return;
+  }
+  const ms = Math.round(performance.now() - t0);
+
+  if (!res.ok) {
+    $('err-box').innerHTML = `<div class="errbox">${res.status}: ${data.error || 'unknown error'}</div>`;
+    $('raw').textContent = JSON.stringify(data, null, 2);
+    return;
+  }
+
+  cursor = data.cursor;
+  $('loadmore-btn').style.display = data.hasMore ? 'block' : 'none';
+
+  $('meta').innerHTML =
+    `<span><b>${data.data.length}</b> results</span>` +
+    (data.totalCount != null ? `<span><b>${data.totalCount}</b> total</span>` : '') +
+    `<span><b>${ms}ms</b></span>` +
+    `<span>cursor → <b>${data.cursor ?? 'null'}</b></span>`;
+
+  const cardsEl = $('cards');
+  if (!append) cardsEl.innerHTML = '';
+  if (data.data.length === 0 && !append) {
+    cardsEl.innerHTML = '<div class="empty">No results</div>';
+  }
+
+  for (const r of data.data) {
+    const l = r.listing;
+    const cover = (l.listing_media || []).find(m => m.is_cover) || (l.listing_media || [])[0];
+    const amenities = (l.listing_amenities || []).slice(0, 4).map(a => a.amenities.name);
+    const card = document.createElement('div');
+    card.className = 'card';
+    card.innerHTML = `
+      ${cover ? `<img src="${cover.media_url}" loading="lazy">` : `<div class="noimg">no image</div>`}
+      <div>
+        <h3>${l.title}</h3>
+        <p class="desc">${l.description || ''}</p>
+        <div class="tags">
+          <span class="price">₹${l.price_weekday ?? '?'}/night</span>
+          <span>${l.num_guests ?? '?'} guests</span>
+          <span>${l.locations?.district || l.locations?.state || 'unknown location'}</span>
+          ${l.avg_rating ? `<span>★ ${l.avg_rating.toFixed(1)} (${l.review_count})</span>` : ''}
+          ${r.distance != null ? `<span>${(r.distance/1000).toFixed(1)}km away</span>` : ''}
+          ${amenities.map(a => `<span>${a}</span>`).join('')}
+        </div>
+      </div>`;
+    cardsEl.appendChild(card);
+  }
+
+  $('raw').textContent = JSON.stringify(data, null, 2);
+}
+
+let acTimer;
+$('loc-autocomplete').addEventListener('input', (e) => {
+  clearTimeout(acTimer);
+  const q = e.target.value.trim();
+  const ul = $('autocomplete-results');
+  if (!q) { ul.innerHTML = ''; return; }
+  acTimer = setTimeout(async () => {
+    try {
+      const res = await fetch('/api/locations?q=' + encodeURIComponent(q));
+      const data = await res.json();
+      ul.innerHTML = (data.data || []).map(loc =>
+        `<li data-district="${loc.district}" data-state="${loc.state}">${loc.district}, ${loc.state}</li>`
+      ).join('');
+    } catch {}
+  }, 250);
+});
+$('autocomplete-results').addEventListener('click', (e) => {
+  if (e.target.tagName !== 'LI') return;
+  $('district').value = e.target.dataset.district;
+  $('state').value = '';
+  $('autocomplete-results').innerHTML = '';
+  $('loc-autocomplete').value = e.target.textContent;
+});
+
+$('search-btn').addEventListener('click', () => runSearch(false));
+$('reset-btn').addEventListener('click', () => { cursor = null; runSearch(false); });
+$('loadmore-btn').addEventListener('click', () => runSearch(true));
+
+checkHealth();
+runSearch(false);
+</script>
+</body>
+</html>

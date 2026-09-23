@@ -7,6 +7,7 @@ package handler
 
 import (
 	"encoding/json"
+	"io/fs"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -18,10 +19,11 @@ type Handler struct {
 	search    *search.Service
 	locations *search.LocationService
 	log       *slog.Logger
+	testUI    fs.FS // optional: static test UI served at "/", nil to disable
 }
 
-func New(s *search.Service, l *search.LocationService, log *slog.Logger) *Handler {
-	return &Handler{search: s, locations: l, log: log}
+func New(s *search.Service, l *search.LocationService, log *slog.Logger, testUI fs.FS) *Handler {
+	return &Handler{search: s, locations: l, log: log, testUI: testUI}
 }
 
 func jsonError(w http.ResponseWriter, status int, err error) {
@@ -45,6 +47,11 @@ func (h *Handler) Routes() http.Handler {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ok"))
 	})
+	if h.testUI != nil {
+		// Manual test UI, not part of the API contract — same-origin static
+		// page so it can call /api/* with plain fetch(), no CORS needed.
+		mux.Handle("/", http.FileServerFS(h.testUI))
+	}
 	return mux
 }
 
