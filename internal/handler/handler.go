@@ -1,7 +1,8 @@
 // Package handler wires HTTP routes to the search package, matching the
 // original Next.js API route contract:
-//   POST /api/search      -> search.Service.Search
-//   GET  /api/locations   -> search.LocationService (q / popular / sample)
+//
+//	POST /api/search      -> search.Service.Search
+//	GET  /api/locations   -> search.LocationService (q / popular / sample)
 package handler
 
 import (

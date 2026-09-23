@@ -5,21 +5,21 @@ package search
 // live/complete RPCs had no free-text search; this is the one intentional
 // addition to the contract).
 type Filters struct {
-	Query        *string  `json:"q"`
-	StartDate    *string  `json:"startDate"`
-	EndDate      *string  `json:"endDate"`
-	District     *string  `json:"district"`
-	State        *string  `json:"state"`
-	MinPrice     *float64 `json:"minPrice"`
-	MaxPrice     *float64 `json:"maxPrice"`
-	TotalGuests  *int     `json:"totalGuests"`
-	Ratings      []int    `json:"ratings"`
-	Amenities    []int    `json:"amenities"`
-	RoomTypes    []string `json:"roomTypes"`
+	Query         *string  `json:"q"`
+	StartDate     *string  `json:"startDate"`
+	EndDate       *string  `json:"endDate"`
+	District      *string  `json:"district"`
+	State         *string  `json:"state"`
+	MinPrice      *float64 `json:"minPrice"`
+	MaxPrice      *float64 `json:"maxPrice"`
+	TotalGuests   *int     `json:"totalGuests"`
+	Ratings       []int    `json:"ratings"`
+	Amenities     []int    `json:"amenities"`
+	RoomTypes     []string `json:"roomTypes"`
 	PropertyTypes []string `json:"propertyTypes"`
-	StayTypes    []string `json:"stayTypes"`
-	Latitude     *float64 `json:"latitude"`
-	Longitude    *float64 `json:"longitude"`
+	StayTypes     []string `json:"stayTypes"`
+	Latitude      *float64 `json:"latitude"`
+	Longitude     *float64 `json:"longitude"`
 }
 
 // Request is the POST /api/search request body.
@@ -54,27 +54,27 @@ type ListingAmenity struct {
 // these are extra keys, so existing frontend code that only reads the
 // original fields is unaffected.
 type Listing struct {
-	ListingID       int64            `json:"listing_id"`
-	Title           string           `json:"title"`
-	Description     string           `json:"description"`
-	PriceWeekday    *float64         `json:"price_weekday"`
-	PriceWeekend    *float64         `json:"price_weekend"`
-	NumGuests       *int             `json:"num_guests"`
-	NumBedrooms     *int             `json:"num_bedrooms"`
-	NumBeds         *int             `json:"num_beds"`
-	NumBathrooms    *int             `json:"num_bathrooms"`
-	Latitude        *float64         `json:"latitude"`
-	Longitude       *float64         `json:"longitude"`
-	PropertyTypeID  *int             `json:"property_type_id"`
-	StayTypeID      *int             `json:"stay_type_id"`
-	LocationID      *int             `json:"location_id"`
-	Locations       Location         `json:"locations"`
-	ListingMedia    []Media          `json:"listing_media"`
+	ListingID        int64            `json:"listing_id"`
+	Title            string           `json:"title"`
+	Description      string           `json:"description"`
+	PriceWeekday     *float64         `json:"price_weekday"`
+	PriceWeekend     *float64         `json:"price_weekend"`
+	NumGuests        *int             `json:"num_guests"`
+	NumBedrooms      *int             `json:"num_bedrooms"`
+	NumBeds          *int             `json:"num_beds"`
+	NumBathrooms     *int             `json:"num_bathrooms"`
+	Latitude         *float64         `json:"latitude"`
+	Longitude        *float64         `json:"longitude"`
+	PropertyTypeID   *int             `json:"property_type_id"`
+	StayTypeID       *int             `json:"stay_type_id"`
+	LocationID       *int             `json:"location_id"`
+	Locations        Location         `json:"locations"`
+	ListingMedia     []Media          `json:"listing_media"`
 	ListingAmenities []ListingAmenity `json:"listing_amenities"`
-	PropertyTypeName *string         `json:"property_type_name,omitempty"`
-	StayTypeTitle    *string         `json:"stay_type_title,omitempty"`
-	AvgRating        float64         `json:"avg_rating,omitempty"`
-	ReviewCount      int             `json:"review_count,omitempty"`
+	PropertyTypeName *string          `json:"property_type_name,omitempty"`
+	StayTypeTitle    *string          `json:"stay_type_title,omitempty"`
+	AvgRating        float64          `json:"avg_rating,omitempty"`
+	ReviewCount      int              `json:"review_count,omitempty"`
 }
 
 type Result struct {

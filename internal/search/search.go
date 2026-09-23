@@ -275,8 +275,8 @@ LIMIT $%d
 	results := make([]Result, 0, pageSize)
 	for rows.Next() {
 		var (
-			r            Result
-			mediaJSON    []byte
+			r             Result
+			mediaJSON     []byte
 			amenitiesJSON []byte
 		)
 		l := &r.Listing
