@@ -46,6 +46,7 @@ func main() {
 
 	searchSvc := search.NewService(pool)
 	locationsSvc := search.NewLocationService(pool)
+	hotelsSvc := search.NewHotelsService(pool)
 
 	var testUI fs.FS
 	if os.Getenv("DISABLE_TEST_UI") != "1" {
@@ -55,7 +56,7 @@ func main() {
 			os.Exit(1)
 		}
 	}
-	h := handler.New(searchSvc, locationsSvc, log, testUI)
+	h := handler.New(searchSvc, locationsSvc, hotelsSvc, log, testUI, cfg.CORSAllowOrigin)
 
 	srv := &http.Server{
 		Addr:              ":" + cfg.Port,

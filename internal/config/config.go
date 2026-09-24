@@ -8,11 +8,12 @@ import (
 
 // Config holds runtime configuration loaded from environment variables.
 type Config struct {
-	Port           string
-	DatabaseURL    string
-	Schema         string
-	MaxConns       int32
-	QueryTimeoutMS int
+	Port            string
+	DatabaseURL     string
+	Schema          string
+	MaxConns        int32
+	QueryTimeoutMS  int
+	CORSAllowOrigin string
 }
 
 func Load() (*Config, error) {
@@ -49,11 +50,22 @@ func Load() (*Config, error) {
 		timeout = n
 	}
 
+	// This API is fully public/anonymous (no auth header, no cookies — same
+	// as the original Supabase anon-key search path), so a permissive
+	// default is consistent with that, not a widening of access. Set to a
+	// specific origin (or a comma-separated list is NOT supported here —
+	// use a single origin, or "*") once the frontend's real domain is known.
+	corsOrigin := os.Getenv("CORS_ALLOW_ORIGIN")
+	if corsOrigin == "" {
+		corsOrigin = "*"
+	}
+
 	return &Config{
-		Port:           port,
-		DatabaseURL:    dbURL,
-		Schema:         schema,
-		MaxConns:       maxConns,
-		QueryTimeoutMS: timeout,
+		Port:            port,
+		DatabaseURL:     dbURL,
+		Schema:          schema,
+		MaxConns:        maxConns,
+		QueryTimeoutMS:  timeout,
+		CORSAllowOrigin: corsOrigin,
 	}, nil
 }

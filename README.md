@@ -99,10 +99,25 @@ See `internal/search/types.go` for the exact JSON contract.
 `q` (full-text autocomplete), `limit` (default 22, clamped 1–100), `popular=1`
 (ranked by active listing count). Same response shape as the original route.
 
+### `GET /api/hotels`
+Homepage teaser: `locationId` (required — returns `{data: []}` if missing or
+non-numeric, never an error), `limit` (default 4, clamped 1–100). Returns up
+to `limit` active listings for that location, shaped like the `listing`
+object in `POST /api/search`'s results. Deliberately fails soft (empty array,
+`200`, not a `4xx/5xx`) on bad input or a query error — it backs a homepage
+widget that shouldn't be able to break the page around it.
+
+## CORS
+
+Enabled by default (`CORS_ALLOW_ORIGIN=*`) — this API has no auth header or
+cookies to protect either way (same as the original anon-key Supabase path),
+so a permissive default doesn't widen access, it just lets a browser call it
+cross-origin. Set `CORS_ALLOW_ORIGIN` to the real frontend's origin once
+known, or to an empty string to disable CORS headers for a same-origin-only
+deployment.
+
 ## Known gaps vs. a full port
 
-* `GET /api/hotels` (homepage teaser) was out of scope — it's not a search
-  endpoint per the audit, and wasn't required by the brief.
 * `ST_AsGeoJSON(boundary)` / state-bounds-for-map lookup isn't wired up yet;
   `stateBounds` is always omitted. Add a `locations` boundary query if the
   frontend needs it.
