@@ -5,12 +5,19 @@ import "strings"
 // districtAliasGroups lists districts that should be treated as
 // interchangeable for the `district` filter, even though they are stored as
 // distinct rows in `locations`. This is NOT fuzzy/similarity matching — it's
-// an explicit, curated list of known real-world naming overlaps (e.g. "New
-// Delhi" is technically one district within the wider Delhi NCT, but most
-// listings and searches use "Delhi" generically). Add an entry here only for
-// a confirmed case, not speculatively for every city.
+// an explicit, curated list of known real-world naming overlaps. Each entry
+// was confirmed against the live `locations` data (both spellings actually
+// exist as distinct district values there) before being added — this list
+// is not a guess at "every Indian city that might have an alias."
+//
+// Deliberately NOT aliased, despite looking similar: "Mumbai"/"Navi Mumbai"
+// and "Noida"/"Greater Noida" are genuinely distinct places (different
+// municipal areas), not renames of the same place, so merging them would be
+// wrong rather than helpful.
 var districtAliasGroups = [][]string{
 	{"delhi", "new delhi"},
+	{"bangalore", "bengaluru"}, // official rename, 2014; both still in common use
+	{"gurgaon", "gurugram"},    // official rename, 2016; both still in common use
 }
 
 var districtAliasIndex = buildDistrictAliasIndex(districtAliasGroups)
