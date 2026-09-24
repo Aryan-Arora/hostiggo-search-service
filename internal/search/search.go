@@ -96,7 +96,10 @@ func buildFilters(f *Filters) *whereBuilder {
 		w.add("LOWER(loc.state) = LOWER($1)", *f.State)
 	}
 	if f.District != nil && *f.District != "" {
-		w.add("LOWER(loc.district) = LOWER($1)", *f.District)
+		// Expand to known aliases (e.g. "New Delhi" <-> "Delhi") — an
+		// explicit, curated list, not fuzzy/similarity matching. See
+		// synonyms.go.
+		w.add("LOWER(loc.district) = ANY($1)", expandDistrictAliases(*f.District))
 	}
 	if f.MinPrice != nil {
 		w.add("l.price_weekday >= $1", *f.MinPrice)
