@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/Aryan-Arora/hostiggo-search-service/internal/config"
@@ -21,6 +22,17 @@ func New(ctx context.Context, cfg *config.Config) (*pgxpool.Pool, error) {
 	poolCfg.MaxConns = cfg.MaxConns
 	poolCfg.MaxConnLifetime = 30 * time.Minute
 	poolCfg.HealthCheckPeriod = time.Minute
+
+	// Supabase's pooled connection strings (Supavisor, port 6543) run in
+	// transaction mode: the physical connection is handed to a different
+	// logical session between transactions. pgx's default query mode caches
+	// server-side prepared statements by name on the connection, which then
+	// collides with a statement of the same name left behind by whichever
+	// other session used that connection previously ("prepared statement
+	// ... already exists", SQLSTATE 42P05). Simple protocol mode never
+	// prepares statements server-side, which is what Supabase's own docs
+	// recommend for pgx behind Supavisor transaction pooling.
+	poolCfg.ConnConfig.DefaultQueryExecMode = pgx.QueryExecModeSimpleProtocol
 
 	// Every session on this connection resolves unqualified table names
 	// against the app's schema first, matching the Supabase client's
