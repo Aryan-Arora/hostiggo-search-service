@@ -38,16 +38,25 @@ can point at this service unchanged.
   reference it (documented in the migration; re-run its backfill `UPDATE` or
   call `refresh_listing_search_vector(listing_id)` if that ever happens).
 * **New optional `q` filter** on `POST /api/search` — the only contract
-  addition. Neither original RPC had free-text search; both were structured
-  filters (state/district/price/guests/amenities/etc). When `q` is present,
-  results are ordered by `ts_rank` instead of `listing_id`.
-* **Pagination**: `cursor` stays wire-compatible as an opaque number.
-  - No `q` and no `latitude`/`longitude`: cursor is `listing_id` (identical
-    semantics to the original `search_listings_by_state`).
-  - With `q` or geo sort: ordering is by relevance/distance, which isn't
-    monotonic with `listing_id`, so cursor is a row offset instead. The
-    client never needs to know which mode is active — it just echoes back
-    whatever `cursor` value the previous response returned.
+  addition to the request shape. Neither original RPC had free-text search;
+  both were structured filters (state/district/price/guests/amenities/etc).
+* **Default browse order is a diversified price-tier interleave, not
+  `listing_id ASC`.** With no `q` and no `latitude`/`longitude` (i.e.
+  whenever nothing else is driving relevance/distance ranking), results
+  cycle **mid, low, mid, low, high** by price, repeating every 5 positions,
+  even with other structured filters (district/price-range/guests/etc.)
+  applied. "Low/mid/high" are Postgres `NTILE(3)` tertiles computed fresh
+  over whatever that request's own filtered result set contains — not a
+  fixed rupee cutoff — so "mid" means the middle third of *these* results,
+  consistently, whether that's all 228 listings or a 12-listing district.
+  `q` (free-text) or `latitude`/`longitude` (geo-sort) each fully replace
+  this with `ts_rank`/distance ordering instead. See `buildQuery` in
+  `internal/search/search.go` for the exact interleave math.
+* **Pagination**: `cursor` is an opaque row offset in every mode now (it's
+  no longer `listing_id`-based even for the plain/default case, since the
+  price-tier interleave isn't `listing_id`-monotonic either). The client
+  never needs to know which ordering mode is active — it just echoes back
+  whatever `cursor` value the previous response returned.
 * **`totalCount`** is computed with the *same* `WHERE`-clause builder as the
   page query (see `whereBuilder` in `internal/search/search.go`), closing
   the drift risk the original migration's own comments flagged between

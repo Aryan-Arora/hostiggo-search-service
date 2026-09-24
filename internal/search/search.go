@@ -174,68 +174,10 @@ func hasQuery(f *Filters) bool {
 	return f != nil && f.Query != nil && strings.TrimSpace(*f.Query) != ""
 }
 
-// isRanked reports whether this request sorts by relevance/distance rather
-// than by listing_id. Ranked queries paginate by row offset (still returned
-// to the client as the opaque `cursor` field); id-sorted queries paginate by
-// listing_id > cursor, exactly like the original search_listings_by_state.
-func isRanked(f *Filters) bool {
-	return hasQuery(f) || hasGeo(f)
-}
-
-// Search executes the listing query and returns a response shaped exactly
-// like the original POST /api/search endpoint's response.
-func (s *Service) Search(ctx context.Context, req Request) (*Response, error) {
-	pageSize := clampPageSize(req.PageSize)
-	filters := req.Filters
-	ranked := isRanked(filters)
-
-	w := buildFilters(filters)
-	whereClause := w.clause()
-	args := append([]interface{}{}, w.args...)
-
-	var cursorOffset int64
-	if req.Cursor != nil {
-		cursorOffset = *req.Cursor
-	}
-
-	// id-mode pagination: listing_id > cursor, keeping exact parity with the
-	// live path's cursor semantics when there's no relevance/geo ordering.
-	if !ranked && req.Cursor != nil {
-		args = append(args, *req.Cursor)
-		whereClause = whereClause + fmt.Sprintf("\n    AND l.listing_id > $%d", len(args))
-	}
-
-	distanceExpr := "NULL::float8"
-	orderExpr := "l.listing_id ASC"
-	if hasGeo(filters) {
-		args = append(args, *filters.Longitude, *filters.Latitude)
-		lonIdx := len(args) - 1
-		latIdx := len(args)
-		distanceExpr = fmt.Sprintf(
-			`ST_Distance(
-        ST_SetSRID(ST_MakePoint(l.longitude, l.latitude), 4326)::geography,
-        ST_SetSRID(ST_MakePoint($%d, $%d), 4326)::geography
-      )`, lonIdx, latIdx)
-		orderExpr = distanceExpr + " ASC, l.listing_id ASC"
-	} else if hasQuery(filters) {
-		args = append(args, *filters.Query)
-		qIdx := len(args)
-		orderExpr = fmt.Sprintf(
-			"ts_rank(l.search_vector, websearch_to_tsquery('english', $%d)) DESC, l.listing_id ASC", qIdx)
-	}
-
-	limitArgIdx := len(args) + 1
-	args = append(args, pageSize+1) // fetch one extra row to compute hasMore
-
-	offsetClause := ""
-	if ranked && cursorOffset > 0 {
-		offsetArgIdx := len(args) + 1
-		args = append(args, cursorOffset)
-		offsetClause = fmt.Sprintf("OFFSET $%d", offsetArgIdx)
-	}
-
-	query := fmt.Sprintf(`
-SELECT
+// selectCols is the column list shared by every ordering mode's final
+// SELECT, keeping the row-scanning code in Search() identical regardless of
+// which mode built the query.
+const selectCols = `
   l.listing_id, l.title, l.description, l.price_weekday, l.price_weekend,
   l.num_guests, l.num_bedrooms, l.num_beds, l.num_bathrooms,
   l.latitude, l.longitude, l.property_type_id, l.stay_type_id, l.location_id,
@@ -244,8 +186,10 @@ SELECT
   COALESCE(rv.avg_rating, 0) AS avg_rating,
   COALESCE(rv.review_count, 0) AS review_count,
   COALESCE(med.media, '[]'::jsonb) AS listing_media,
-  COALESCE(am.amenities, '[]'::jsonb) AS listing_amenities,
-  %s AS distance
+  COALESCE(am.amenities, '[]'::jsonb) AS listing_amenities`
+
+// joinBlock is the join structure shared by every ordering mode.
+const joinBlock = `
 FROM listings l
 LEFT JOIN locations loc ON l.location_id = loc.location_id
 LEFT JOIN property_types pt ON l.property_type_id = pt.id
@@ -262,12 +206,126 @@ LEFT JOIN LATERAL (
 LEFT JOIN LATERAL (
   SELECT avg(r.rating) AS avg_rating, count(r.rating) AS review_count
   FROM review r WHERE r.listing_id = l.listing_id
-) rv ON TRUE
+) rv ON TRUE`
+
+// buildQuery constructs the page query and its full positional-arg list for
+// one of three ordering modes. All three paginate by row offset (not
+// listing_id), since none of them produce a listing_id-monotonic order:
+//   - geo:  ORDER BY distance to the given point
+//   - text: ORDER BY ts_rank against the free-text query
+//   - default (neither of the above): a diversified price-tier interleave —
+//     see buildDefaultOrderQuery's own comment for why and how.
+func buildQuery(w *whereBuilder, filters *Filters, pageSize int, cursorOffset int64) (string, []interface{}) {
+	args := append([]interface{}{}, w.args...)
+
+	switch {
+	case hasGeo(filters):
+		args = append(args, *filters.Longitude, *filters.Latitude)
+		lonIdx := len(args) - 1
+		latIdx := len(args)
+		distanceExpr := fmt.Sprintf(
+			`ST_Distance(
+        ST_SetSRID(ST_MakePoint(l.longitude, l.latitude), 4326)::geography,
+        ST_SetSRID(ST_MakePoint($%d, $%d), 4326)::geography
+      )`, lonIdx, latIdx)
+		orderExpr := distanceExpr + " ASC, l.listing_id ASC"
+		limitIdx := len(args) + 1
+		args = append(args, pageSize+1)
+		offsetIdx := len(args) + 1
+		args = append(args, cursorOffset)
+		query := fmt.Sprintf(`
+SELECT%s,
+  %s AS distance
+%s
 WHERE %s
 ORDER BY %s
-LIMIT $%d
+LIMIT $%d OFFSET $%d
+`, selectCols, distanceExpr, joinBlock, w.clause(), orderExpr, limitIdx, offsetIdx)
+		return query, args
+
+	case hasQuery(filters):
+		args = append(args, *filters.Query)
+		qIdx := len(args)
+		orderExpr := fmt.Sprintf(
+			"ts_rank(l.search_vector, websearch_to_tsquery('english', $%d)) DESC, l.listing_id ASC", qIdx)
+		limitIdx := len(args) + 1
+		args = append(args, pageSize+1)
+		offsetIdx := len(args) + 1
+		args = append(args, cursorOffset)
+		query := fmt.Sprintf(`
+SELECT%s,
+  NULL::float8 AS distance
 %s
-`, distanceExpr, whereClause, orderExpr, limitArgIdx, offsetClause)
+WHERE %s
+ORDER BY %s
+LIMIT $%d OFFSET $%d
+`, selectCols, joinBlock, w.clause(), orderExpr, limitIdx, offsetIdx)
+		return query, args
+
+	default:
+		limitIdx := len(args) + 1
+		args = append(args, pageSize+1)
+		offsetIdx := len(args) + 1
+		args = append(args, cursorOffset)
+		query := fmt.Sprintf(`
+WITH filtered AS (
+  SELECT%s
+  %s
+  WHERE %s
+),
+tiered AS (
+  SELECT *, NTILE(3) OVER (ORDER BY price_weekday NULLS LAST, listing_id) AS _tier
+  FROM filtered
+),
+positioned AS (
+  SELECT *, ROW_NUMBER() OVER (PARTITION BY _tier ORDER BY listing_id) - 1 AS _r
+  FROM tiered
+)
+SELECT
+  listing_id, title, description, price_weekday, price_weekend,
+  num_guests, num_bedrooms, num_beds, num_bathrooms,
+  latitude, longitude, property_type_id, stay_type_id, location_id,
+  state, district, property_type_name, stay_type_title,
+  avg_rating, review_count, listing_media, listing_amenities,
+  NULL::float8 AS distance
+FROM positioned
+ORDER BY
+  -- Default browse order: mid, low, mid, low, high, repeating. Price tiers
+  -- (_tier: 1=low, 2=mid, 3=high) are Postgres NTILE(3) tertiles of
+  -- whatever this request's own filtered result set actually contains, not
+  -- a fixed rupee cutoff — so "mid" always means "middle third of these
+  -- results," in Delhi or in a 2-listing town alike. Within a 5-position
+  -- block, mid supplies positions 0 and 2, low supplies 1 and 3, high
+  -- supplies 4 — so mid/low are each consumed 2-per-block and high 1-per-
+  -- block; _r (each tier's own 0-indexed row number) maps directly to a
+  -- block index and a within-block slot via integer division/modulo. This
+  -- ONLY applies with no free-text q and no lat/lon geo-sort — either of
+  -- those takes over ordering entirely (see the other two branches above).
+  CASE _tier
+    WHEN 2 THEN (_r / 2) * 5 + (CASE WHEN _r %% 2 = 0 THEN 0 ELSE 2 END)
+    WHEN 1 THEN (_r / 2) * 5 + (CASE WHEN _r %% 2 = 0 THEN 1 ELSE 3 END)
+    WHEN 3 THEN _r * 5 + 4
+  END
+LIMIT $%d OFFSET $%d
+`, selectCols, joinBlock, w.clause(), limitIdx, offsetIdx)
+		return query, args
+	}
+}
+
+// Search executes the listing query and returns a response shaped exactly
+// like the original POST /api/search endpoint's response.
+func (s *Service) Search(ctx context.Context, req Request) (*Response, error) {
+	pageSize := clampPageSize(req.PageSize)
+	filters := req.Filters
+
+	w := buildFilters(filters)
+
+	var cursorOffset int64
+	if req.Cursor != nil {
+		cursorOffset = *req.Cursor
+	}
+
+	query, args := buildQuery(w, filters, pageSize, cursorOffset)
 
 	rows, err := s.pool.Query(ctx, query, args...)
 	if err != nil {
@@ -318,13 +376,10 @@ LIMIT $%d
 	}
 
 	if len(results) > 0 {
-		if ranked {
-			nextCursor := cursorOffset + int64(len(results))
-			resp.Cursor = &nextCursor
-		} else {
-			lastID := results[len(results)-1].Listing.ListingID
-			resp.Cursor = &lastID
-		}
+		// Every mode now paginates by row offset (see buildQuery's doc
+		// comment) — cursor is an opaque running offset, not a listing_id.
+		nextCursor := cursorOffset + int64(len(results))
+		resp.Cursor = &nextCursor
 	}
 
 	// totalCount is only computed on the first page, mirroring the original
