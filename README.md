@@ -24,6 +24,19 @@ can point at this service unchanged.
   neither column/index existed in the original schema; the one existing
   full-text function (`search_locations_partial`) computed `to_tsvector()`
   on the fly per call with no index.
+* **`listings.search_vector` covers more than just title/description** — see
+  [`migrations/0002_expand_listing_search_vector.sql`](migrations/0002_expand_listing_search_vector.sql).
+  Weighted: `A` title, `B` description, `C` property type / stay type /
+  district / state / neighborhood, `D` address lines / landmark / amenity
+  names. So `q=rohini` matches on address, `q=pool` matches on amenities,
+  even when neither word appears in the title or description. Kept in sync
+  on writes via triggers on both `listings` (title/description/type/location/
+  address changes) and `listing_amenities` (amenity add/remove) — the latter
+  exists because amenities live in a separate join table a listings-only
+  trigger can't see. One known gap: editing a `locations` row's own
+  state/district/neighborhood text does not cascade to listings that
+  reference it (documented in the migration; re-run its backfill `UPDATE` or
+  call `refresh_listing_search_vector(listing_id)` if that ever happens).
 * **New optional `q` filter** on `POST /api/search` — the only contract
   addition. Neither original RPC had free-text search; both were structured
   filters (state/district/price/guests/amenities/etc). When `q` is present,
