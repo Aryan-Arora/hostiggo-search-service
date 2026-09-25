@@ -13,7 +13,7 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/Aryan-Arora/hostiggo-search-service/internal/search"
+	"github.com/Aryan-Arora/search-service-backend/internal/search"
 )
 
 type Handler struct {

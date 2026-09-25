@@ -1,4 +1,4 @@
-module github.com/Aryan-Arora/hostiggo-search-service
+module github.com/Aryan-Arora/search-service-backend
 
 go 1.22
 

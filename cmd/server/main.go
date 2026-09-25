@@ -11,10 +11,10 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/Aryan-Arora/hostiggo-search-service/internal/config"
-	"github.com/Aryan-Arora/hostiggo-search-service/internal/db"
-	"github.com/Aryan-Arora/hostiggo-search-service/internal/handler"
-	"github.com/Aryan-Arora/hostiggo-search-service/internal/search"
+	"github.com/Aryan-Arora/search-service-backend/internal/config"
+	"github.com/Aryan-Arora/search-service-backend/internal/db"
+	"github.com/Aryan-Arora/search-service-backend/internal/handler"
+	"github.com/Aryan-Arora/search-service-backend/internal/search"
 )
 
 // testUIFiles is a small manual test console for exercising POST /api/search

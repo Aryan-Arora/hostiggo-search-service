@@ -8,7 +8,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/Aryan-Arora/hostiggo-search-service/internal/config"
+	"github.com/Aryan-Arora/search-service-backend/internal/config"
 )
 
 // New creates a pooled pgx connection to Postgres (Supabase Supavisor pooled
