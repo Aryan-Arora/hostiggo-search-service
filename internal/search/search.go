@@ -84,7 +84,12 @@ func (w *whereBuilder) clause() string {
 	return strings.Join(w.conds, "\n    AND ")
 }
 
-func buildFilters(f *Filters) *whereBuilder {
+// buildFilters builds the WHERE clause for the primary (exact) match. Pass
+// includeDistrict=false to build the same filter set but with the district
+// predicate omitted entirely — used by the radius-expansion fallback
+// (expand.go) to search the surrounding area without also re-matching the
+// district that fallback exists to expand beyond.
+func buildFilters(f *Filters, includeDistrict bool) *whereBuilder {
 	w := &whereBuilder{}
 	w.add("l.is_active = TRUE")
 
@@ -95,7 +100,7 @@ func buildFilters(f *Filters) *whereBuilder {
 	if f.State != nil && *f.State != "" {
 		w.add("LOWER(loc.state) = LOWER($1)", *f.State)
 	}
-	if f.District != nil && *f.District != "" {
+	if includeDistrict && f.District != nil && *f.District != "" {
 		// Expand to known aliases (e.g. "New Delhi" <-> "Delhi") — an
 		// explicit, curated list, not fuzzy/similarity matching. See
 		// synonyms.go.
@@ -312,21 +317,11 @@ LIMIT $%d OFFSET $%d
 	}
 }
 
-// Search executes the listing query and returns a response shaped exactly
-// like the original POST /api/search endpoint's response.
-func (s *Service) Search(ctx context.Context, req Request) (*Response, error) {
-	pageSize := clampPageSize(req.PageSize)
-	filters := req.Filters
-
-	w := buildFilters(filters)
-
-	var cursorOffset int64
-	if req.Cursor != nil {
-		cursorOffset = *req.Cursor
-	}
-
-	query, args := buildQuery(w, filters, pageSize, cursorOffset)
-
+// runListingQuery executes a query built by buildQuery (or the expansion
+// path's equivalent) and scans it into Results. Shared so the normal path
+// and the radius-expansion path (expand.go) can't drift in how they read
+// the same column shape.
+func (s *Service) runListingQuery(ctx context.Context, query string, args []interface{}, pageSize int) ([]Result, error) {
 	rows, err := s.pool.Query(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("search query: %w", err)
@@ -364,6 +359,42 @@ func (s *Service) Search(ctx context.Context, req Request) (*Response, error) {
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterating rows: %w", err)
 	}
+	return results, nil
+}
+
+// Search executes the listing query and returns a response shaped exactly
+// like the original POST /api/search endpoint's response.
+func (s *Service) Search(ctx context.Context, req Request) (*Response, error) {
+	pageSize := clampPageSize(req.PageSize)
+	filters := req.Filters
+
+	w := buildFilters(filters, true)
+
+	var cursorOffset int64
+	if req.Cursor != nil {
+		cursorOffset = *req.Cursor
+	}
+
+	// Radius-expansion fallback: only when a district was actually searched
+	// for, and only for the default ordering mode (see expand.go's doc
+	// comment for why q/geo-sort are out of scope for now).
+	if filters != nil && filters.District != nil && *filters.District != "" &&
+		!hasGeo(filters) && !hasQuery(filters) {
+		plan, err := s.planExpansion(ctx, w, filters, pageSize)
+		if err != nil {
+			return nil, fmt.Errorf("planning radius expansion: %w", err)
+		}
+		if plan != nil {
+			return s.searchWithExpansion(ctx, w, filters, plan, pageSize, cursorOffset)
+		}
+	}
+
+	query, args := buildQuery(w, filters, pageSize, cursorOffset)
+
+	results, err := s.runListingQuery(ctx, query, args, pageSize)
+	if err != nil {
+		return nil, err
+	}
 
 	hasMore := len(results) > pageSize
 	if hasMore {
@@ -387,7 +418,22 @@ func (s *Service) Search(ctx context.Context, req Request) (*Response, error) {
 	// same WHERE clause/args built above, so it can't drift from the page
 	// query's predicates).
 	if req.Cursor == nil {
-		countQuery := fmt.Sprintf(`
+		total, err := s.countMatching(ctx, w)
+		if err != nil {
+			return nil, err
+		}
+		resp.TotalCount = &total
+	}
+
+	return resp, nil
+}
+
+// countMatching runs COUNT(*) for a WHERE clause built by buildFilters. The
+// join set here only needs to support whatever a filter might reference
+// (rv.avg_rating for the ratings filter) — it doesn't need media/amenities
+// aggregation, unlike the page query.
+func (s *Service) countMatching(ctx context.Context, w *whereBuilder) (int64, error) {
+	countQuery := fmt.Sprintf(`
 SELECT count(*)
 FROM listings l
 LEFT JOIN locations loc ON l.location_id = loc.location_id
@@ -398,12 +444,9 @@ LEFT JOIN LATERAL (
 ) rv ON TRUE
 WHERE %s
 `, w.clause())
-		var total int64
-		if err := s.pool.QueryRow(ctx, countQuery, w.args...).Scan(&total); err != nil {
-			return nil, fmt.Errorf("count query: %w", err)
-		}
-		resp.TotalCount = &total
+	var total int64
+	if err := s.pool.QueryRow(ctx, countQuery, w.args...).Scan(&total); err != nil {
+		return 0, fmt.Errorf("count query: %w", err)
 	}
-
-	return resp, nil
+	return total, nil
 }

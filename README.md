@@ -52,6 +52,25 @@ can point at this service unchanged.
   `q` (free-text) or `latitude`/`longitude` (geo-sort) each fully replace
   this with `ts_rank`/distance ordering instead. See `buildQuery` in
   `internal/search/search.go` for the exact interleave math.
+* **Radius-expansion fallback when a district is short on results.** If
+  `filters.district` is set and the exact-district match can't fill even one
+  page (fewer matches than the requested `pageSize`), the remainder is
+  topped up with nearby listings found by real distance (PostGIS
+  `ST_Distance`), still respecting every other filter (price/guests/
+  amenities/etc.) — only the district constraint is relaxed. Radius starts
+  at 15km and doubles (15/30/60/120/200km) until enough results are found or
+  the 200km cap is hit, so a sparse region can't silently pull in results
+  from across the country. The search center is the average coordinates of
+  the district's own listings, or — for a district with zero listings of
+  its own, like "New Delhi" in this dataset — the average coordinates of
+  every listing in the same state instead; both derived entirely from real
+  listing data, nothing hardcoded. Fallback results are blended into the
+  same ordered list with no distinguishing field (exact matches first in
+  their normal order, then fallback matches nearest-first) — the response
+  contract doesn't change shape. Scope: only the default ordering mode; `q`
+  or geo-sort searches don't get this fallback, since either is already a
+  more specific request the user made on purpose. See `internal/search/
+  expand.go`.
 * **Pagination**: `cursor` is an opaque row offset in every mode now (it's
   no longer `listing_id`-based even for the plain/default case, since the
   price-tier interleave isn't `listing_id`-monotonic either). The client
