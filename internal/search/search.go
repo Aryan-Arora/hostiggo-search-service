@@ -101,10 +101,21 @@ func buildFilters(f *Filters, includeDistrict bool) *whereBuilder {
 		w.add("LOWER(loc.state) = LOWER($1)", *f.State)
 	}
 	if includeDistrict && f.District != nil && *f.District != "" {
-		// Expand to known aliases (e.g. "New Delhi" <-> "Delhi") — an
-		// explicit, curated list, not fuzzy/similarity matching. See
-		// synonyms.go.
-		w.add("LOWER(loc.district) = ANY($1)", expandDistrictAliases(*f.District))
+		// The `district` field doubles as a free-text "destination" box on
+		// the frontend, so it sometimes actually holds a STATE name (e.g.
+		// someone types "Uttarakhand" rather than "Dehradun"). No district
+		// is ever literally named after its own state, so a pure district
+		// match returns nothing — matching real data confirmed this exact
+		// failure. Rather than a curated per-state alias list (which would
+		// need updating by hand for every future state), match on EITHER
+		// the district (including its known aliases, e.g. "New Delhi" <->
+		// "Delhi" — see synonyms.go) OR the state name directly, live
+		// against whatever states/districts actually exist — so this
+		// generalizes to every current state and any added later without
+		// code changes.
+		districtInput := strings.ToLower(strings.TrimSpace(*f.District))
+		w.add("(LOWER(loc.district) = ANY($1) OR LOWER(loc.state) = $2)",
+			expandDistrictAliases(*f.District), districtInput)
 	}
 	if f.MinPrice != nil {
 		w.add("l.price_weekday >= $1", *f.MinPrice)

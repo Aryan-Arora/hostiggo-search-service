@@ -18,6 +18,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/jackc/pgx/v5"
 )
@@ -97,7 +98,13 @@ func (s *Service) planExpansion(ctx context.Context, w *whereBuilder, filters *F
 func buildExpansionWhereBuilder(filters *Filters) *whereBuilder {
 	w := buildFilters(filters, false)
 	if filters != nil && filters.District != nil && *filters.District != "" {
-		w.add("NOT (LOWER(loc.district) = ANY($1))", expandDistrictAliases(*filters.District))
+		// Mirrors buildFilters' primary-match predicate exactly (district
+		// alias OR state name) — otherwise a listing matched into the
+		// primary group via the state-name path could also leak into the
+		// fallback group as a duplicate.
+		districtInput := strings.ToLower(strings.TrimSpace(*filters.District))
+		w.add("NOT (LOWER(loc.district) = ANY($1) OR LOWER(loc.state) = $2)",
+			expandDistrictAliases(*filters.District), districtInput)
 	}
 	return w
 }

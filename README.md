@@ -52,6 +52,17 @@ can point at this service unchanged.
   `q` (free-text) or `latitude`/`longitude` (geo-sort) each fully replace
   this with `ts_rank`/distance ordering instead. See `buildQuery` in
   `internal/search/search.go` for the exact interleave math.
+* **The `district` filter also matches state names.** The frontend's
+  destination box feeds this field regardless of whether the user typed an
+  actual district ("Dehradun") or a state ("Uttarakhand") — no district is
+  ever literally named after its own state, so a pure district match on a
+  state name returned nothing (a real bug found in testing). Fixed with one
+  extra `OR LOWER(loc.state) = ...` clause in `buildFilters`, matched live
+  against whatever states/districts actually exist in `locations` — not a
+  curated list — so it covers every state today and any added at onboarding
+  later with no code change. `buildExpansionWhereBuilder`'s exclusion clause
+  mirrors this exactly, so a state-matched listing can't double up in both
+  the primary and radius-expansion fallback groups.
 * **Radius-expansion fallback when a district is short on results.** If
   `filters.district` is set and the exact-district match can't fill even one
   page (fewer matches than the requested `pageSize`), the remainder is
